@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Rewrite: Remaster</title>
+<style>
+:root{--bg:#14101f;--card:#211a33;--ink:#f3e9d2;--dim:#9d93b5;--accent:#ffb454;--good:#7ee0a1;--bad:#ff7a8a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#2b2147,var(--bg));color:var(--ink);font-family:Georgia,serif;display:flex;justify-content:center;padding:16px}
+#app{width:100%;max-width:640px}
+h1{text-align:center;font-size:2rem;margin:10px 0 0;letter-spacing:1px}
+h1 span{color:var(--accent)}
+.sub{text-align:center;color:var(--dim);margin:4px 0 18px;font-style:italic}
+.card{background:var(--card);border-radius:14px;padding:20px;box-shadow:0 8px 30px #0006}
+.bar{display:flex;justify-content:space-between;color:var(--dim);font-size:.9rem;margin-bottom:10px}
+.story{font-size:1.15rem;line-height:1.6;min-height:110px;white-space:pre-wrap}
+.pick{color:var(--accent);font-weight:bold}
+button{font:inherit;cursor:pointer;color:var(--ink);background:#2e2548;border:1px solid #4a3d6e;border-radius:10px;padding:12px 14px;width:100%;text-align:left;margin-top:10px;transition:.15s}
+button:hover{background:#3b2f5c;border-color:var(--accent);transform:translateX(3px)}
+button.small{width:auto;padding:8px 12px;font-size:.9rem;margin:10px 8px 0 0}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.end{text-align:center;font-size:1.3rem;color:var(--accent);margin-top:14px}
+.tag{font-size:.85rem;color:var(--dim)}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.row{display:flex;flex-wrap:wrap}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background-image:radial-gradient(2px 2px at 20% 30%,#fff8,transparent),radial-gradient(2px 2px at 70% 20%,#ffd98a99,transparent),radial-gradient(1.5px 1.5px at 40% 80%,#fff7,transparent),radial-gradient(2px 2px at 85% 65%,#fff6,transparent);background-size:300px 300px;animation:drift 40s linear infinite}
+@keyframes drift{to{background-position:300px 600px}}
+.card{border:1px solid #4a3d6e;position:relative}
+.story{animation:fade .5s}@keyframes fade{from{opacity:0;transform:translateY(6px)}}
+#vbtn{display:block;margin:0 auto 12px}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>Story <span>Rewrite</span></h1>
+<p class="sub">Remaster 2.0 &middot; you hold the pen</p>
+<button class="small" id="vbtn">Read aloud: off</button>
+<div class="card" id="game"></div>
+</div>
+<script>
+/* ===== STORY DATA ===== */
+// Step 1: the player rewrites the opening by picking a hero, a place and a trouble.
+const PICKS={
+  hero:{q:"Who is your hero?",o:{knight:"a tired knight",thief:"a sneaky thief",baker:"a village baker"}},
+  place:{q:"Where does it start?",o:{castle:"a crumbling castle",forest:"a whispering forest",port:"a foggy harbour"}},
+  trouble:{q:"What has gone wrong?",o:{dragon:"a dragon stole the moon",curse:"everyone is cursed to sleep",king:"the king has vanished"}}
+};
+const ROLE={knight:"sword",thief:"lockpick",baker:"magic bread"};
+
+// Each scene: text (can use {hero} {place} {trouble}), choices [{t,go,need,give,set}]
+const S={
+start:{t:"Once upon a time, {hero} stood in {place}.\nThe news was bad: {trouble}.\nNobody else was brave enough to fix it. So it was up to you.",
+  c:[{t:"Head out right away",go:"road"},{t:"Gather supplies first (+1 coin)",go:"road",give:"coin"}]},
+road:{t:"The road splits in two. One way is bright and loud. The other is dark and quiet. A talking crow lands on a sign and says, \"I'd pick the dark one. But I'm a crow, so what do I know.\"",
+  c:[{t:"Take the bright road",go:"market"},{t:"Take the dark road",go:"cave"},{t:"Ask the crow to come along",go:"crow",give:"crow"}]},
+crow:{t:"The crow flaps onto your shoulder. \"Great. Now we're a team. First rule: I get the snacks.\"\nYou walk on and reach a fork where the crow can scout ahead.",
+  c:[{t:"Send the crow up the bright road",go:"market"},{t:"Send the crow down the dark road",go:"cave"}]},
+market:{t:"A busy market. A merchant waves a glowing {role} at you. \"Only 2 coins!\"",
+  c:[{t:"Buy it (costs 2 coins)",go:"bridge",need:{coin:2},spend:{coin:2},give:"gear"},{t:"Haggle with a silly joke",go:"haggle"},{t:"Walk past",go:"bridge"}]},
+haggle:{t:"You tell your best joke. The merchant laughs so hard he drops the {role} and cries, \"Take it! Just never tell that joke again!\"",
+  c:[{t:"Take it and go",go:"bridge",give:"gear"}]},
+cave:{t:"The dark road leads to a cave. Something inside is humming a sad song. You find a pile of shiny coins and a sleeping bear.",
+  c:[{t:"Grab 2 coins quietly",go:"bear",give:"coin2"},{t:"Sing along with the humming",go:"friend"},{t:"Back away slowly",go:"bridge"}]},
+bear:{t:"A coin slips and clinks. The bear wakes up. It does not look happy.",
+  c:[{t:"Use your {role}",go:"friend",need:{gear:1}},{t:"Run!",go:"bridge",lose:"coin"},{t:"Offer the crow as a snack",go:"crowbad",need:{crow:1}},{t:"Say sorry very politely",go:"friend"}]},
+crowbad:{t:"The crow is horrified. \"I trusted you.\" It flies away and does not come back.\nYou feel like a villain. The bear eats nothing and goes back to sleep.",
+  c:[{t:"Sneak out",go:"bridge",lose:"crow"}]},
+friend:{t:"It turns out the bear was just lonely. It joins you with a giant happy hug. Your new friend is very strong.",
+  c:[{t:"Walk on together",go:"bridge",give:"bear"}]},
+bridge:{t:"A rickety bridge leads to the place of the trouble. A troll blocks the way.\n\"Riddle time,\" he says. \"What gets wetter the more it dries?\"",
+  c:[{t:"A towel!",go:"troll_ok"},{t:"A sponge?",go:"troll_bad"},{t:"Let the bear handle it",go:"troll_bear",need:{bear:1}},{t:"Let the crow answer",go:"troll_ok",need:{crow:1}}]},
+troll_bad:{t:"\"Wrong!\" The troll groans, then sighs. \"Fine, you look sad. Pay 1 coin and go.\"",
+  c:[{t:"Pay 1 coin",go:"library",need:{coin:1},spend:{coin:1}},{t:"Run past him",go:"end_fall"}]},
+troll_ok:{t:"\"Correct. Annoying.\" The troll steps aside and mutters about getting new riddles.",
+  c:[{t:"Cross the bridge",go:"library"}]},
+troll_bear:{t:"The bear gives the troll a hug. The troll starts crying and says nobody has ever hugged him. He lets you through and asks for your number.",
+  c:[{t:"Cross the bridge",go:"library"}]},
+library:{t:"Past the bridge stands a tall library with no roof. Pages of every story float by like birds. One page glows. It is the first page of YOUR story.\nA sign says: THE PEN IS YOURS. REWRITE ONE THING (costs 1 ink).",
+  c:[{t:"Rewrite your hero",go:"finale",rw:"hero"},{t:"Rewrite where it started",go:"finale",rw:"place"},{t:"Rewrite what went wrong",go:"finale",rw:"trouble"},{t:"Leave your story as it is",go:"finale"}]},
+finale:{t:"At last you find the heart of it all. {trouble}, and the cause is a small, grumpy shadow sitting on a rock, holding a very old book.\n\"This is MY story,\" it says. \"I wrote it. You can't change it.\"",
+  c:[{t:"Fight the shadow",go:"end_fight"},{t:"Rewrite the book with your pen",go:"end_rewrite"},{t:"Ask why it's so sad",go:"end_talk"},{t:"Hand it a magic snack from the crow",go:"end_snack",need:{crow:1}},{t:"Show it your rewritten first page",go:"end_twist",need:{rw:1}},{t:"Throw a party for everyone",go:"end_party",need:{crow:1,bear:1}}]},
+end_fight:{t:"You swing. The shadow just laughs and the book flips to a new page: THE END (of you). You wake up on the road, wiser and a bit embarrassed.",e:"Ending: Bonk",r:"bad"},
+end_fall:{t:"You sprint, trip on the planks, and fall into the river. You float all the way home. The story ends with you wet and annoyed.",e:"Ending: Soggy",r:"bad"},
+end_rewrite:{t:"You write a new last page. The shadow gasps. \"You can DO that?\" Everything is fixed, and the shadow gets its own happy chapter too.",e:"Ending: The Rewrite",r:"good"},
+end_talk:{t:"The shadow says it only wanted someone to read its book. You read every page out loud. By the end, {trouble} is gone, and you made a friend.",e:"Ending: Good Listener",r:"good"},
+end_twist:{t:"The shadow reads your new first page and its eyes go wide. \"It was supposed to end sadly. But yours is better.\" The whole book rewrites itself around you. Plot twist: you were the author all along.",e:"Ending: Plot Twist",r:"good"},
+end_party:{t:"You, the bear and the crow throw the loudest party the shadow has ever heard. Everyone dances. The shadow cries happy tears. The troll shows up with snacks and his phone number is now in your contacts.",e:"Ending: Best Friends",r:"good"},
+end_snack:{t:"The shadow eats a magic crow snack and instantly becomes a cheerful little cloud. It floats away giggling. Problem solved, snack gone.",e:"Ending: Snack Diplomacy",r:"good"}
+};
+const TOTAL_ENDINGS=7;
+
+/* ===== STATE ===== */
+const $=document.getElementById("game");
+let st;
+function load(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}}
+function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+let endings=load("srr_endings",[]);
+
+function fresh(){return{step:"pick",pickIdx:0,sel:{},scene:null,inv:{coin:0,gear:0,crow:0,bear:0,rw:0},hist:[],ink:3}}
+
+/* ===== HELPERS ===== */
+function fill(s){
+  return s.replace(/\{hero\}/g,p("hero")).replace(/\{place\}/g,p("place")).replace(/\{trouble\}/g,p("trouble")).replace(/\{role\}/g,ROLE[st.sel.hero]||"item");
+}
+function p(k){return '<span class="pick">'+PICKS[k].o[st.sel[k]]+'</span>'}
+function can(c){
+  if(c.rw&&st.ink<1)return false;
+  if(!c.need)return true;
+  for(const k in c.need) if((st.inv[k]||0)<c.need[k]) return false;
+  return true;
+}
+function snap(){return JSON.stringify({scene:st.scene,inv:st.inv,sel:st.sel,ink:st.ink})}
+
+/* ===== RENDER ===== */
+function render(){
+  if(st.step==="pick") return renderPick();
+  const sc=S[st.scene];
+  let h='<div class="bar"><span>Coins: '+st.inv.coin+(st.inv.gear?" &middot; "+ROLE[st.sel.hero]:"")+(st.inv.crow?" &middot; crow":"")+(st.inv.bear?" &middot; bear":"")+'</span><span>Ink: '+st.ink+'</span></div>';
+  h+='<div class="story">'+fill(sc.t)+'</div>';
+  if(sc.e){
+    if(!endings.includes(sc.e)){endings.push(sc.e);save("srr_endings",endings)}
+    h+='<div class="end '+sc.r+'">'+sc.e+'</div>';
+    h+='<p class="tag" style="text-align:center">Endings found: '+endings.length+' / '+TOTAL_ENDINGS+'</p>';
+    h+='<div class="row" style="justify-content:center"><button class="small" id="again">Write it again</button></div>';
+  } else {
+    sc.c.forEach((c,i)=>{
+      const ok=can(c);
+      h+='<button data-i="'+i+'"'+(ok?"":" disabled")+'>'+fill(c.t)+(ok?"":" (you need more stuff)")+'</button>';
+    });
+    h+='<div class="row"><button class="small" id="undo"'+(st.hist.length&&st.ink>0?"":" disabled")+'>Rewrite last choice (1 ink)</button><button class="small" id="restart">Start over</button></div>';
+  }
+  $.innerHTML=h;speak(fill(sc.t));
+  if(sc.e){document.getElementById("again").onclick=start;return}
+  $.querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>choose(sc.c[+b.dataset.i]));
+  document.getElementById("undo").onclick=undo;
+  document.getElementById("restart").onclick=start;
+  save("srr_save",st);
+}
+function renderPick(){
+  const keys=Object.keys(PICKS),k=keys[st.pickIdx],P=PICKS[k];
+  let h='<div class="bar"><span>Rewrite the start</span><span>'+(st.pickIdx+1)+' / 3</span></div>';
+  h+='<div class="story">Before the tale begins, you get to rewrite it.\n\n<b>'+P.q+'</b></div>';
+  for(const id in P.o) h+='<button data-id="'+id+'">'+P.o[id]+'</button>';
+  const sv=load("srr_save",null);
+  if(st.pickIdx===0&&sv&&sv.step==="play") h+='<div class="row"><button class="small" id="cont">Continue saved story</button></div>';
+  h+='<p class="tag">Endings found: '+endings.length+' / '+TOTAL_ENDINGS+'</p>';
+  $.innerHTML=h;
+  $.querySelectorAll("button[data-id]").forEach(b=>b.onclick=()=>{
+    st.sel[k]=b.dataset.id;st.pickIdx++;
+    if(st.pickIdx>=3){st.step="play";st.scene="start";}
+    render();
+  });
+  const c=document.getElementById("cont");
+  if(c)c.onclick=()=>{st=sv;render()};
+}
+
+/* ===== ACTIONS ===== */
+function choose(c){
+  st.hist.push(snap());
+  if(c.rw){const ks=Object.keys(PICKS[c.rw].o),i=ks.indexOf(st.sel[c.rw]);st.sel[c.rw]=ks[(i+1)%ks.length];st.ink--;st.inv.rw=1;}
+  if(c.spend)for(const k in c.spend)st.inv[k]-=c.spend[k];
+  if(c.give==="coin")st.inv.coin+=1;
+  else if(c.give==="coin2")st.inv.coin+=2;
+  else if(c.give)st.inv[c.give]=1;
+  if(c.lose){if(c.lose==="coin")st.inv.coin=Math.max(0,st.inv.coin-1);else st.inv[c.lose]=0}
+  st.scene=c.go;
+  render();
+}
+function undo(){
+  if(!st.hist.length||st.ink<1)return;
+  const prev=JSON.parse(st.hist.pop());
+  const was=st.ink;st.scene=prev.scene;st.inv=prev.inv;st.sel=prev.sel;st.ink=Math.min(was,prev.ink)-1;
+  render();
+}
+function start(){st=fresh();render()}
+
+let voice=load("srr_voice",false);
+const vb=document.getElementById("vbtn");
+function vlabel(){vb.textContent="Read aloud: "+(voice?"on":"off")}
+function speak(t){
+  if(!voice||!window.speechSynthesis)return;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(t.replace(/<[^>]+>/g,"")));
+}
+vb.onclick=()=>{voice=!voice;save("srr_voice",voice);vlabel();if(!voice&&window.speechSynthesis)speechSynthesis.cancel();else if(st&&st.scene)speak(fill(S[st.scene].t))};
+vlabel();
+start();
+</script>
+</body>
+</html>
